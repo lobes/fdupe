@@ -1,6 +1,9 @@
-//todo: add flag for hidden files
-//todo: add flag for recursive
-//todo: add help/usage
+//todo: only print binary duplicates
+//todo: flag for hidden files
+//todo: flag for recursive
+//todo: help/usage
+//todo: update README with usage and examples
+//todo: GitHub releases
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -14,6 +17,7 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
+
 fn run(dir_path: &str) -> Result<(), String> {
     let paths = fs::read_dir(dir_path).map_err(|e| format!("failed to read directory: {}", e))?;
 
