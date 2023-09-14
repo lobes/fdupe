@@ -7,6 +7,8 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::hash::Hasher;
+use std::io::{BufReader, Read};
 
 fn main() -> Result<(), String> {
     let dir_path = env::args()
@@ -18,10 +20,39 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
+struct File {
+    path: String,
+    size: u64,
+    hash: u64,
+}
+
+impl File {
+    fn hash(&self) -> Result<u64, String> {
+        let file = fs::File::open(&self.path).map_err(|e| format!("failed to open file: {}", e))?;
+        let mut reader = BufReader::new(file);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut buffer = [0; 1024];
+
+        loop {
+            let bytes_read = reader
+                .read(&mut buffer)
+                .map_err(|e| format!("failed to read file: {}", e))?;
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            hasher.write(&buffer[..bytes_read]);
+        }
+
+        Ok(hasher.finish())
+    }
+}
+
 fn run(dir_path: &str) -> Result<(), String> {
     let paths = fs::read_dir(dir_path).map_err(|e| format!("failed to read directory: {}", e))?;
 
-    let mut file_sizes: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut files: Vec<File> = Vec::new();
 
     for path in paths {
         let entry = path.map_err(|e| format!("failed to get path: {}", e))?;
@@ -40,24 +71,41 @@ fn run(dir_path: &str) -> Result<(), String> {
                 .canonicalize()
                 .map_err(|e| format!("failed to canonicalize path: {}", e))?;
 
-            file_sizes
-                .entry(file_size)
-                .or_default()
-                .push(abs_path.display().to_string());
+            let file: File = File {
+                path: abs_path.display().to_string(),
+                size: file_size,
+                hash: 0,
+            };
+
+            files.push(file);
         }
     }
 
-    let mut file_sizes: Vec<(u64, Vec<String>)> = file_sizes.into_iter().collect();
-    file_sizes.sort_by_key(|(_, paths)| paths.len());
-    file_sizes.reverse();
+    let groups = group_by_size(files);
 
-    for (size, paths) in file_sizes {
-        if paths.len() > 1 {
-            println!("{} bytes:", size);
-            println!("{}", paths.join("\n"));
-            println!();
+    for group in groups {
+        for mut file in group {
+            file.hash = file.hash()?;
         }
     }
 
     Ok(())
+}
+
+fn group_by_size(files: Vec<File>) -> Vec<Vec<File>> {
+    let mut file_sizes: HashMap<u64, Vec<File>> = HashMap::new();
+
+    for file in files {
+        file_sizes.entry(file.size).or_default().push(file);
+    }
+
+    let mut groups: Vec<Vec<File>> = Vec::new();
+
+    for (_, files) in file_sizes {
+        if files.len() > 1 {
+            groups.push(files);
+        }
+    }
+
+    groups
 }
